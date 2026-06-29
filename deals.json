@@ -1,0 +1,113 @@
+{
+  "updated": "2026-06-29T16:42:28.013Z",
+  "totalDeals": 300,
+  "deals": [
+    {
+      "id": 125115,
+      "title": "Grab Rs. 250 Off Your Order of Portronics Essentials!",
+      "description": "Save Rs.250 on a range of headphones, speakers, and backpacks.Minimum spending of Rs.1999 is necessary.Use the&nbsp; coupon code at checkout.Don't miss out, elevate your gadget experience now!",
+      "campaignName": "Portronics",
+      "campaignId": 4313,
+      "affiliateLink": "https://linksredirect.com/?pub_id=242184&url=https%3A%2F%2Fwww.portronics.com%2F",
+      "merchantUrl": "https://www.portronics.com/",
+      "domain": "portronics.com",
+      "payout": "",
+      "payoutType": "",
+      "offerImage": "https://cdn0.cuelinks.com/merchant/3950/medium/New_Project_-_2021-03-16T170141.607_%281%29.png?1615896079",
+      "couponCode": "SAVE250",
+      "category": "general",
+      "offerCategories": {
+        "13": "Gaming",
+        "17": "Sports"
+      },
+      "startDate": "2026-06-29",
+      "endDate": "2026-09-30",
+      "timestamp": "2026-06-29T16:42:28.005Z"
+    },
+    {
+      "id": 125111,
+      "title": "Get the Best AI Tools: Enjoy Discounts Up to 95% on New Arrivals",
+      "description": "Find the most innovative AI tools at fantastic prices!Starting from only $39.Designed to maximize your creativity and efficiency.Hurry—these offers won't last long!",
+      "campaignName": "appsumo",
+      "campaignId": 6271,
+      "affiliateLink": "https://linksredirect.com/?pub_id=242184&url=https%3A%2F%2Fappsumo.com%2Fcollections%2Fnew%2F",
+      "merchantUrl": "https://appsumo.com/collections/new/",
+      "domain": "appsumo.com",
+      "payout": "",
+      "payoutType": "",
+      "offerImage": "https://cdn0.cuelinks.com/merchant/6037/medium/as-appsumo-logo-dark.fbc325ee.png?1710510512",
+      "couponCode": null,
+      "category": "general",
+      "offerCategories": {
+        "21": "Software"
+      },
+      "startDate": "2026-06-29",
+      "endDate": "2026-08-31",
+      "timestamp": "2026-06-29T16:42:28.006Z"
+    },
+    {
+      "id": 125107,
+      "title": "Unlock Custom Software for Only $39!",
+      "description": "Transform your ideas into reality without breaking the bank.Prices start as low as $39 - super affordable!Open to everyone looking for budget-friendly solutions.Start your journey today and elevate your projects!",
+      "campaignName": "appsumo",
+      "campaignId": 6271,
+      "affiliateLink": "https://linksredirect.com/?pub_id=242184&url=https%3A%2F%2Fappsumo.com%2Fsoftware%2Fbuild-it-yourself%2F",
+      "merchantUrl": "https://appsumo.com/software/build-it-yourself/",
+      "domain": "appsumo.com",
+      "payout": "",
+      "payoutType": "",
+      "offerImage": "https://cdn0.cuelinks.com/merchant/6037/medium/as-appsumo-logo-dark.fbc325ee.png?1710510512",
+      "couponCode": null,
+      "category": "general",
+      "offerCategories": {
+        "21": "Software"
+      },
+      "startDate": "2026-06-29",
+      "endDate": "2026-07-15",
+      "timestamp": "2026-06-29T16:42:28.006Z"
+    },
+    {
+      "id": 125105,
+      "title": "Elevate Your Customer Experience with Up to 85% Off Software Deals!",
+      "description": "Access specialized tools to improve support and boost customer satisfaction.This offer is for every entrepreneur looking to grow.Experience incredible savings of up to 85%!Grab this deal and take your service to the next level!",
+      "campaignName": "appsumo",
+      "campaignId": 6271,
+      "affiliateLink": "https://linksredirect.com/?pub_id=242184&url=https%3A%2F%2Fappsumo.com%2Fsoftware%2Fcustomer-experience%2F%3Fsort%3Dlatest",
+      "merchantUrl": "https://appsumo.com/software/customer-experience/?sort=latest",
+      "domain": "appsumo.com",
+      "payout": "",
+      "payoutType": "",
+      "offerImage": "https://cdn0.cuelinks.com/merchant/6037/medium/as-appsumo-logo-dark.fbc325ee.png?1710510512",
+      "couponCode": null,
+      "category": "general",
+      "offerCategories": {
+        "21": "Software"
+      },
+      "startDate": "2026-06-29",
+      "endDate": "2026-12-31",
+      "timestamp": "2026-06-29T16:42:28.006Z"
+    },
+    {
+      "id": 125104,
+      "title": "Unlock Savings: Grab 35% Off When You Buy 2 UNO Items!",
+      "description": "Don’t miss out – open to all shoppers!Simply buy any 2 products to unlock 35% off.No minimum purchase needed!Claim your savings now!",
+      "campaignName": "Superbottoms",
+      "campaignId": 4653,
+      "affiliateLink": "https://linksredirect.com/?pub_id=242184&url=https%3A%2F%2Fsuperbottoms.com%2F",
+      "merchantUrl": "https://superbottoms.com/",
+      "domain": "superbottoms.com",
+      "payout": "",
+      "payoutType": "",
+      "offerImage": "/photos/medium/missing.png",
+      "couponCode": "UNO35",
+      "category": "general",
+      "offerCategories": {
+        "4": "Electronics",
+        "18": "Entertainment"
+      },
+      "startDate": "2026-06-29",
+      "endDate": "2026-07-31",
+      "timestamp": "2026-06-29T16:42:28.006Z"
+    }
+  ]
+}
