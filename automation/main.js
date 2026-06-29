@@ -1,266 +1,293 @@
 /**
- * 🚀 Cuelinks Affiliate Automation - Main Orchestrator
+ * 🚀 Cuelinks Affiliate Automation - Main Orchestrator (v2)
  *
- * Flow:
- * 1. Fetch campaigns & offers from Cuelinks API
- * 2. Process offers into deals with affiliate links
- * 3. Fetch relevant images via Pexels
- * 4. Format rich posts & send to Telegram channel
- * 5. Track posted deals to avoid duplicates
- * 6. Save JSON for website integration
+ * Pipeline (multi-source):
+ *   1. Fetch from ALL enabled sources (Cuelinks /offers, user-submitted)
+ *   2. Merge + dedupe (across sources)
+ *   3. Filter (categories, min payout, posted before)
+ *   4. Limit (max posts per run)
+ *   5. Post to Telegram (best format per deal)
+ *   6. Track posted IDs/URLs
+ *   7. Update website data + GitHub Pages
  *
- * Run: node main.js
- * Schedule: GitHub Actions cron
+ * Run modes:
+ *   - node main.js              → Standard cron run
+ *   - node main.js --dry-run    → Fetch + process, no posting
+ *   - node main.js --web-form   → Trigger from website form (already submitted)
+ *
+ * Schedule: GitHub Actions cron (every 6 hours)
  */
 
 const fs = require('fs');
 const path = require('path');
 const CuelinksAPI = require('./cuelinks');
+const LinkKit = require('./linkkit');
 const TelegramPoster = require('./telegram');
 const ImageFetcher = require('./images');
+const { buildSources, fetchAll } = require('./sources');
+const UserSubmittedSource = require('./sources/user-submitted');
 const config = require('./config');
 
 class AutomationEngine {
   constructor() {
     this.cuelinks = new CuelinksAPI();
+    this.linkkit = new LinkKit([], { logger: console });
     this.telegram = new TelegramPoster();
     this.images = new ImageFetcher();
     this.trackingPath = path.join(__dirname, config.trackingFile);
     this.postedDeals = this.loadPostedDeals();
+    this.submittedSource = new UserSubmittedSource({ logger: console });
+    this.dryRun = process.argv.includes('--dry-run');
+    this.logger = console;
   }
 
-  /**
-   * Load previously posted deal IDs to avoid duplicates.
-   */
   loadPostedDeals() {
     try {
       if (fs.existsSync(this.trackingPath)) {
         const data = JSON.parse(fs.readFileSync(this.trackingPath, 'utf8'));
-        return new Set(data.postedIds || []);
+        // Support both old (postedIds array) and new (posted array with keys)
+        const posted = data.postedIds || data.posted || [];
+        return new Set(posted);
       }
     } catch (err) {
-      console.error('⚠️ Failed to load tracking file:', err.message);
+      this.logger.error('⚠️  Failed to load tracking file:', err.message);
     }
     return new Set();
   }
 
-  /**
-   * Save posted deal IDs.
-   */
   savePostedDeals() {
     try {
       const data = {
         lastRun: new Date().toISOString(),
-        postedIds: [...this.postedDeals],
+        postedIds: [...this.postedDeals].slice(-2000),  // keep last 2000
         totalPosted: this.postedDeals.size,
       };
       fs.writeFileSync(this.trackingPath, JSON.stringify(data, null, 2));
-      console.log(`💾 Tracking: ${this.postedDeals.size} total deals posted`);
+      this.logger.log(`💾 Tracking: ${this.postedDeals.size} total entries`);
     } catch (err) {
-      console.error('❌ Failed to save tracking:', err.message);
+      this.logger.error('❌ Failed to save tracking:', err.message);
     }
   }
 
-  /**
-   * Save deals to JSON file for website + docs/ for GitHub Pages.
-   */
+  isDuplicate(deal) {
+    const keys = [
+      deal.sourceId,
+      deal.affiliateLink,
+      `${deal.source}::${deal.merchantUrl}`,
+    ].filter(Boolean);
+    return keys.some(k => this.postedDeals.has(k));
+  }
+
+  markPosted(deal) {
+    [deal.sourceId, deal.affiliateLink, `${deal.source}::${deal.merchantUrl}`]
+      .filter(Boolean)
+      .forEach(k => this.postedDeals.add(k));
+  }
+
   saveWebsiteData(deals) {
     try {
       const websitePath = path.join(__dirname, config.websiteOutputFile);
       const docsPath = path.join(__dirname, 'docs', config.websiteOutputFile);
       const docsDir = path.dirname(docsPath);
-
-      // Keep last 50 deals for performance
       const topDeals = deals.slice(0, 50);
       const data = {
         updated: new Date().toISOString(),
         channel: config.telegram.channelLink,
         totalDeals: deals.length,
-        deals: topDeals,
-      };
-
-      // Save to automation/ for the website
-      fs.writeFileSync(websitePath, JSON.stringify(data, null, 2));
-
-      // Copy to docs/ for GitHub Pages (create dir if needed)
-      if (!fs.existsSync(docsDir)) {
-        fs.mkdirSync(docsDir, { recursive: true });
-        console.log(`📁 Created docs/ directory for GitHub Pages`);
-      }
-      fs.writeFileSync(docsPath, JSON.stringify(data, null, 2));
-
-      console.log(`🌐 Website data saved: ${topDeals.length} deals`);
-    } catch (err) {
-      console.error('❌ Failed to save website data:', err.message);
-    }
-  }
-
-  /**
-   * Check if a deal has already been posted.
-   */
-  isDuplicate(deal) {
-    return this.postedDeals.has(deal.id);
-  }
-
-  /**
-   * Mark a deal as posted.
-   */
-  markPosted(deal) {
-    this.postedDeals.add(deal.id);
-  }
-
-  /**
-   * MAIN EXECUTION FLOW
-   */
-  async run() {
-    const startTime = Date.now();
-    console.log('═'.repeat(60));
-    console.log('🤖 CUELINKS AFFILIATE AUTOMATION');
-    console.log(`⏰ ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`);
-    console.log('═'.repeat(60));
-    console.log('');
-
-    // Step 1: Fetch campaigns & offers from Cuelinks
-    console.log('📡 [1/5] Fetching from Cuelinks API...');
-    const [campaigns, offers] = await Promise.all([
-      this.cuelinks.getCampaigns(),
-      this.cuelinks.getOffers(),
-    ]);
-
-    if (!campaigns.length) {
-      console.error('❌ No campaigns found — aborting');
-      return;
-    }
-
-    // Step 2: Process offers into affiliate deals
-    console.log(`\n🔗 [2/5] Processing ${offers.length} offers into deals...`);
-    let deals = this.cuelinks.processOffers(offers, campaigns);
-
-    // Filter duplicates
-    const newDeals = deals.filter(d => !this.isDuplicate(d));
-    console.log(`   ${newDeals.length} new deals (${deals.length - newDeals.length} duplicates skipped)`);
-
-    if (!newDeals.length) {
-      console.log('📭 No new deals to post. All caught up!');
-      return;
-    }
-
-    // Step 3: Apply filters & limit
-    let toPost = newDeals;
-
-    // Filter by focus categories (if configured)
-    if (config.automation.focusCategories.length > 0) {
-      toPost = toPost.filter(d =>
-        config.automation.focusCategories.includes(d.category)
-      );
-      console.log(`   ${toPost.length} deals after category filter: [${config.automation.focusCategories}]`);
-    }
-
-    // Filter by min payout (skip deals without payout data rather than dropping them)
-    if (config.automation.minPayoutPercent > 0) {
-      toPost = toPost.filter(d => {
-        const payout = parseFloat(d.payout);
-        if (isNaN(payout) || !payout) return true; // Keep deals without payout data
-        return payout >= config.automation.minPayoutPercent;
-      });
-      console.log(`   ${toPost.length} deals after payout filter (>=${config.automation.minPayoutPercent}%)`);
-    }
-
-    // Limit posts per run
-    toPost = toPost.slice(0, config.automation.maxPostsPerRun);
-    console.log(`📊 [3/5] Posting ${toPost.length} deals this run...\n`);
-
-    // Step 4: Post deals to Telegram
-    console.log(`📢 [4/5] Posting to Telegram...\n`);
-    let posted = 0;
-    let failed = 0;
-
-    for (let i = 0; i < toPost.length; i++) {
-      const deal = toPost[i];
-      console.log(`   📝 [${i + 1}/${toPost.length}] ${deal.title.substring(0, 60)}...`);
-
-      try {
-        // Try to get image
-        let imageUrl = null;
-        if (config.pexels.apiKey) {
-          const image = await this.images.getDealImage(deal);
-          if (image) {
-            imageUrl = image.url;
-            console.log(`   🖼️  Image: ${image.photographer || 'Pexels'}`);
-          }
-        }
-
-        // Post to Telegram
-        const result = await this.telegram.postDeal(deal, imageUrl);
-        if (result) {
-          this.markPosted(deal);
-          posted++;
-          console.log(`   ✅ Posted successfully!\n`);
-        } else {
-          failed++;
-          console.log(`   ❌ Failed to post\n`);
-        }
-
-        // Delay between posts to avoid rate limits
-        if (i < toPost.length - 1) {
-          await this.sleep(config.automation.postDelay);
-        }
-      } catch (err) {
-        failed++;
-        console.error(`   ❌ Error posting: ${err.message}\n`);
-      }
-    }
-
-    // Step 5: Save tracking & website data
-    console.log('💾 [5/5] Saving data...');
-    this.savePostedDeals();
-    this.saveWebsiteData(deals);
-    this.saveLog(deals, toPost, posted, failed, startTime);
-
-    // Summary
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log('');
-    console.log('═'.repeat(60));
-    console.log(`✅ DONE in ${duration}s — Posted: ${posted} | Failed: ${failed} | Skipped: ${newDeals.length - toPost.length}`);
-    console.log(`📊 Total deals in tracking: ${this.postedDeals.size}`);
-    console.log('═'.repeat(60));
-  }
-
-  /**
-   * Save a run log for debugging.
-   */
-  saveLog(allDeals, posted, success, failed, startTime) {
-    try {
-      const logPath = path.join(__dirname, 'run_log.json');
-      const log = {
-        timestamp: new Date().toISOString(),
-        duration: Date.now() - startTime,
-        totalDeals: allDeals.length,
-        postedThisRun: posted.length,
-        success,
-        failed,
-        deals: posted.map(d => ({
-          id: d.id,
+        deals: topDeals.map(d => ({
+          id: d.sourceId,
           title: d.title,
-          campaign: d.campaignName,
-          link: d.affiliateLink,
+          description: d.description || '',
+          campaignName: d.campaignName || 'Deal',
+          domain: this._extractDomain(d.merchantUrl || d.affiliateLink),
+          affiliateLink: d.affiliateLink,
+          offerImage: d.imageUrl,
+          couponCode: d.couponCode,
+          category: d.category || 'general',
+          payout: d.payout || '',
+          payoutType: d.payoutType || '',
+          source: d.source,
         })),
       };
-      fs.writeFileSync(logPath, JSON.stringify(log, null, 2));
+      fs.writeFileSync(websitePath, JSON.stringify(data, null, 2));
+      if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
+      fs.writeFileSync(docsPath, JSON.stringify(data, null, 2));
+      this.logger.log(`🌐 Website data saved: ${topDeals.length} deals`);
     } catch (err) {
-      // Non-critical - don't fail the run
+      this.logger.error('❌ Failed to save website data:', err.message);
     }
   }
 
-  /**
-   * Delay helper.
-   */
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  _extractDomain(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    } catch {
+      return '';
+    }
   }
+
+  async run() {
+    const startTime = Date.now();
+    this.logger.log('═'.repeat(60));
+    this.logger.log('🤖 CUELINKS AFFILIATE AUTOMATION v2 (multi-source)');
+    this.logger.log(`⏰ ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`);
+    this.logger.log(`🔧 Mode: ${this.dryRun ? 'DRY-RUN (no posting)' : 'LIVE POSTING'}`);
+    this.logger.log('═'.repeat(60));
+
+    // ── Step 1: Fetch campaigns (always needed for LinkKit) ──
+    this.logger.log('\n📡 [1/6] Fetching Cuelinks campaigns...');
+    const campaigns = await this.cuelinks.getCampaigns();
+    if (config.linkkit.enabled && campaigns.length) {
+      this.linkkit.setCampaigns(campaigns);
+      this.submittedSource.setLinkKit(campaigns, this.linkkit);
+    }
+
+    // ── Step 2: Build sources + fetch all in parallel ──
+    this.logger.log('\n📥 [2/6] Building sources...');
+    const sources = buildSources(config).map(s => {
+      if (s.name === 'user-submitted') s.setLinkKit(campaigns, this.linkkit);
+      return s;
+    });
+    this.logger.log(`   Sources: ${sources.map(s => s.name()).join(', ')}`);
+
+    this.logger.log('\n📦 [3/6] Fetching deals from all sources...');
+    const allDeals = await fetchAll(sources);
+    this.logger.log(`   Total unique deals: ${allDeals.length}`);
+
+    if (!allDeals.length) {
+      this.logger.log('📭 No deals from any source. Done.');
+      return;
+    }
+
+    // ── Step 3: Prioritize user-submitted (if enabled) ──
+    let ordered = allDeals;
+    if (config.automation.prioritizeUserSubmissions) {
+      const user = allDeals.filter(d => d.source === 'user-submitted');
+      const others = allDeals.filter(d => d.source !== 'user-submitted');
+      ordered = [...user, ...others];
+      this.logger.log(`   Prioritized: ${user.length} user-submitted first`);
+    }
+
+    // ── Step 4: Filter duplicates + apply config filters ──
+    this.logger.log('\n🔍 [4/6] Filtering & scoring...');
+    const fresh = ordered.filter(d => !this.isDuplicate(d));
+    this.logger.log(`   ${fresh.length} new (${ordered.length - fresh.length} duplicates skipped)`);
+
+    let toPost = fresh;
+    if (config.automation.focusCategories.length > 0) {
+      toPost = toPost.filter(d =>
+        config.automation.focusCategories.includes(d.category || 'general')
+      );
+      this.logger.log(`   ${toPost.length} after category filter`);
+    }
+    if (config.automation.minPayoutPercent > 0) {
+      toPost = toPost.filter(d => {
+        const p = parseFloat(d.payout);
+        return isNaN(p) || p === 0 || p >= config.automation.minPayoutPercent;
+      });
+      this.logger.log(`   ${toPost.length} after payout filter`);
+    }
+    // Sort by payout (desc) then by source priority (user-submitted first)
+    toPost.sort((a, b) => {
+      const ap = parseFloat(a.payout) || 0;
+      const bp = parseFloat(b.payout) || 0;
+      if (bp !== ap) return bp - ap;
+      return (a.source === 'user-submitted' ? -1 : 1);
+    });
+
+    toPost = toPost.slice(0, config.automation.maxPostsPerRun);
+    this.logger.log(`📊 [5/6] Posting ${toPost.length} deals this run (maxPostsPerRun=${config.automation.maxPostsPerRun})\n`);
+
+    if (this.dryRun) {
+      toPost.forEach((d, i) => this.logger.log(`   [${i + 1}] ${d.title.substring(0, 60)} — ${d.campaignName}`));
+    } else {
+      let posted = 0, failed = 0;
+      for (let i = 0; i < toPost.length; i++) {
+        const deal = toPost[i];
+        this.logger.log(`   📝 [${i + 1}/${toPost.length}] ${deal.title.substring(0, 60)}...`);
+        try {
+          let imageUrl = null;
+          if (config.pexels.apiKey) {
+            const image = await this.images.getDealImage({ title: deal.title, category: deal.category });
+            if (image) imageUrl = image.url;
+          }
+          const result = await this.telegram.postDeal(this._toTeleFormat(deal), imageUrl);
+          if (result) {
+            this.markPosted(deal);
+            posted++;
+            this.logger.log(`   ✅ Posted!\n`);
+          } else {
+            failed++;
+            this.logger.log(`   ❌ Failed\n`);
+          }
+          if (i < toPost.length - 1) await this.sleep(config.automation.postDelay);
+        } catch (err) {
+          failed++;
+          this.logger.error(`   ❌ Error: ${err.message}\n`);
+        }
+      }
+
+      this.logger.log('💾 [6/6] Saving data...');
+      this.savePostedDeals();
+      this.saveWebsiteData(allDeals);
+      this._saveRunLog(allDeals, toPost, posted, failed, startTime);
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      this.logger.log('\n' + '═'.repeat(60));
+      this.logger.log(`✅ DONE in ${duration}s — Posted: ${posted} | Failed: ${failed} | Source mix: ${this._sourceMix(allDeals)}`);
+      this.logger.log(`📊 Total in tracking: ${this.postedDeals.size}`);
+      this.logger.log('═'.repeat(60));
+    }
+  }
+
+  _sourceMix(deals) {
+    const c = {};
+    deals.forEach(d => c[d.source] = (c[d.source] || 0) + 1);
+    return Object.entries(c).map(([k, v]) => `${k}=${v}`).join(' ');
+  }
+
+  _toTeleFormat(deal) {
+    return {
+      id: deal.sourceId,
+      title: deal.title,
+      description: deal.description,
+      campaignName: deal.campaignName,
+      domain: this._extractDomain(deal.merchantUrl || deal.affiliateLink),
+      affiliateLink: deal.affiliateLink,
+      merchantUrl: deal.merchantUrl,
+      offerImage: deal.imageUrl,
+      couponCode: deal.couponCode,
+      category: deal.category,
+      payout: deal.payout,
+      payoutType: deal.payoutType,
+      source: deal.source,
+    };
+  }
+
+  _saveRunLog(all, posted, ok, fail, startTime) {
+    try {
+      const logPath = path.join(__dirname, 'run_log.json');
+      fs.writeFileSync(logPath, JSON.stringify({
+        timestamp: new Date().toISOString(),
+        duration: Date.now() - startTime,
+        totalDeals: all.length,
+        postedThisRun: posted.length,
+        successful: ok,
+        failed: fail,
+        sourceMix: this._sourceMix(all),
+        deals: posted.map(d => ({
+          id: d.sourceId,
+          title: d.title,
+          source: d.source,
+          link: d.affiliateLink,
+        })),
+      }, null, 2));
+    } catch {}
+  }
+
+  sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 }
 
-// Run
 (async () => {
   const engine = new AutomationEngine();
   try {
