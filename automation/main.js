@@ -26,6 +26,7 @@ const TelegramPoster = require('./telegram');
 const ImageFetcher = require('./images');
 const { buildSources, fetchAll } = require('./sources');
 const UserSubmittedSource = require('./sources/user-submitted');
+const { scoreDeal, pickTopN, explainScore } = require('./scoring');
 const config = require('./config');
 
 class AutomationEngine {
@@ -187,16 +188,18 @@ class AutomationEngine {
       });
       this.logger.log(`   ${toPost.length} after payout filter`);
     }
-    // Sort by payout (desc) then by source priority (user-submitted first)
-    toPost.sort((a, b) => {
-      const ap = parseFloat(a.payout) || 0;
-      const bp = parseFloat(b.payout) || 0;
-      if (bp !== ap) return bp - ap;
-      return (a.source === 'user-submitted' ? -1 : 1);
-    });
+    // QUALITY SCORING: pick BEST N deals (not just highest payout).
+    // Considers payout + coupon + image + description + popular merchant
+    // + freshness + category diversity.
+    toPost = pickTopN(toPost, config.automation.maxPostsPerRun, { maxPerCategory: 2 });
 
-    toPost = toPost.slice(0, config.automation.maxPostsPerRun);
-    this.logger.log(`📊 [5/6] Posting ${toPost.length} deals this run (maxPostsPerRun=${config.automation.maxPostsPerRun})\n`);
+    this.logger.log(`📊 [5/6] Posting ${toPost.length} quality-scored deals this run (maxPostsPerRun=${config.automation.maxPostsPerRun})\n`);
+    toPost.forEach((d, i) => {
+      const score = scoreDeal(d);
+      const why = explainScore(d).join(', ');
+      this.logger.log(`   🏆 [${i + 1}] score=${score} | ${(d.campaignName || '').substring(0, 18).padEnd(18)} | ${(d.title || '').substring(0, 50)}`);
+      if (why) this.logger.log(`      why: ${why}`);
+    });
 
     if (this.dryRun) {
       toPost.forEach((d, i) => this.logger.log(`   [${i + 1}] ${d.title.substring(0, 60)} — ${d.campaignName}`));
