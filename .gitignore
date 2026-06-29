@@ -1,5 +1,31 @@
+# Dependencies
 node_modules/
 .env
+.env.local
+
+# Logs
 *.log
+npm-debug.log*
+
+# OS
 .DS_Store
-automation/cuelinks_test_results.json
+Thumbs.db
+
+# Dev-only / one-time setup scripts (kept locally, not in repo)
+automation/setup_github.js
+automation/test_cuelinks_api.js
+automation/test_cuelinks_api.py
+
+# Auto-generated runtime data (committed selectively by workflow only)
+automation/posted_deals.json
+automation/run_log.json
+automation/data/submitted_urls.json
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Python (test scripts)
+__pycache__/
+*.pyc
