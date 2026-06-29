@@ -1,0 +1,58 @@
+name: 🚀 Cuelinks Affiliate Automation
+
+on:
+  # Schedule: Runs every 6 hours (4 times/day — uses ~120 min/month of free 2000)
+  schedule:
+    - cron: '0 */6 * * *'  # At minute 0 every 6th hour
+
+  # Manual trigger for testing
+  workflow_dispatch:
+
+  # Also run on push to automation files (for testing)
+  push:
+    branches: [main, master]
+    paths:
+      - 'automation/**'
+      - '.github/workflows/automation.yml'
+
+jobs:
+  post-deals:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Install dependencies
+        working-directory: automation
+        run: npm install
+
+      - name: 🤖 Run Automation
+        env:
+          CUELINKS_API_KEY: ${{ secrets.CUELINKS_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: node automation/main.js
+
+      - name: 💾 Commit tracking data
+        if: always()
+        run: |
+          git config user.name "Cuelinks Bot"
+          git config user.email "bot@cuelinks-automation.dev"
+          git add automation/posted_deals.json automation/deals.json automation/docs/deals.json automation/run_log.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "📊 Update deals data [skip ci]"
+          git push || true
+
+      - name: 🚀 Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: automation/docs
+          publish_branch: gh-pages
+          commit_message: '🚀 Auto-deploy deals website [skip ci]'
